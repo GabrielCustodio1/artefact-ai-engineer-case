@@ -1,6 +1,5 @@
 import sqlite3
 from pathlib import Path
-
 from pypdf import PdfReader
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -20,15 +19,50 @@ def buscar_produtos(termo: str = None, preco_maximo: float = None):
     query = "SELECT id, name, category, price_brl, stock_quantity FROM products WHERE 1=1"
     params = []
 
-    # Se o termo for preenchido e diferente de 'todos', filtra pelo nome ou categoria
-    if termo and termo.strip().lower() not in ["todos", "tudo", "geral", ""]:
-        query += " AND (LOWER(name) LIKE ? OR LOWER(category) LIKE ?)"
-        termo_sql = f"%{termo.strip().lower()}%"
-        params.extend([termo_sql, termo_sql])
+    # 1. Limpa termos comuns que não são nomes de instrumentos
+    if termo:
+        palavras_ignorar = {
+            "mais",
+            "barato",
+            "barata",
+            "baratos",
+            "baratas",
+            "caro",
+            "cara",
+            "menor",
+            "maior",
+            "preço",
+            "preco",
+            "qual",
+            "o",
+            "a",
+            "um",
+            "uma",
+            "de",
+            "do",
+            "da",
+            "todos",
+            "tudo",
+        }
+        palavras_reais = [
+            p
+            for p in termo.strip().lower().split()
+            if p not in palavras_ignorar
+        ]
+        termo_limpo = " ".join(palavras_reais)
 
-    if preco_maximo is not None:
+        if termo_limpo:
+            query += " AND (LOWER(name) LIKE ? OR LOWER(category) LIKE ?)"
+            termo_sql = f"%{termo_limpo}%"
+            params.extend([termo_sql, termo_sql])
+
+    # 2. Só aplica preco_maximo se for um valor real maior que zero
+    if preco_maximo is not None and preco_maximo > 0:
         query += " AND price_brl <= ?"
-        params.append(preco_maximo)
+        params.append(float(preco_maximo))
+
+    # 3. SEMPRE ordena do mais barato para o mais caro
+    query += " ORDER BY price_brl ASC"
 
     cursor.execute(query, params)
     produtos = cursor.fetchall()
