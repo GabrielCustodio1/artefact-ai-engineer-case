@@ -116,8 +116,10 @@ streamlit run app.py
 Open your browser at http://localhost:8501.
 
 👨‍💻 Candidate & Submission Info
+Candidate: Gabriel Custodio de Abreu
 
-Candidate: Gabriel Custodio de Abreu | 
-Role: AI Engineer – Full-Stack para Aplicações com IA Generativa | 
-Company: Artefact Brazil | 
+Role: AI Engineer – Full-Stack para Aplicações com IA Generativa
+
+Company: Artefact Brazil
+
 Submission Date: November 2026
