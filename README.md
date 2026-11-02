@@ -79,7 +79,13 @@ artefact-ai-engineer-case/
 └── data/
     ├── emporio_musica.db  # Relational database (orders, order_items, products)
     └── politicas_da_loja.pdf # Official store policy manual
-🚀 Quickstart & Reproduction GuidePrerequisitesPython 3.10+Ollama installed and runningStep 1: Download & Run the Local ModelBashollama run qwen2.5:7b-instruct-q4_K_M
+
+
+# 🚀 Quickstart & Reproduction GuidePrerequisitesPython 3.10+Ollama installed and running
+
+# Step 1: Download & Run the Local Model
+Bash
+ollama run qwen2.5:7b-instruct-q4_K_M
 (Once downloaded, Ollama will serve the OpenAI-compatible API on http://localhost:11434/v1).Step 2: Clone & Set Up the EnvironmentBashgit clone [https://github.com/GabrielCustodio1/artefact-ai-engineer-case.git](https://github.com/GabrielCustodio1/artefact-ai-engineer-case.git)
 cd artefact-ai-engineer-case
 
@@ -90,5 +96,6 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
+
 Step 3: Run the ApplicationBashstreamlit run app.py
 Open your browser at http://localhost:8501.🧪 Validation MatrixScenarioInput QueryExpected & Observed Agent BehaviorComposite Multi-Tool"Quais violões vocês têm por até R$ 800 e qual a política de devolução?"Calls both buscar_produtos and consultar_politicas. Returns Yamaha C40 / Tagima Memphis and explains the 7-day withdrawal clause with store-covered shipping.Transactional Order"Poderia verificar o status e os itens do pedido número 1?"Triggers consultar_pedido(order_id='1'), retrieving customer details, carrier tracking code, and itemized instruments.Scope Boundary Check"Vocês têm encordoamento de aço e palhetas Fender?"Politely declines without hallucinating stock, informing the customer that the store deals exclusively in musical instruments.Catalog Exploration"Quais os tipos de instrumentos no catálogo?"Executes general product retrieval and outlines available instrument categories (violões, guitarras, teclados, baterias, sopro).👨‍💻 Candidate & Submission InfoCandidate: Gabriel Custodio de AbreuRole: AI Engineer – Full-Stack para Aplicações com IA GenerativaCompany: Artefact BrazilSubmission Date: November 2026
