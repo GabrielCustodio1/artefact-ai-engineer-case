@@ -7,27 +7,36 @@ from tools import buscar_produtos, consultar_pedido, consultar_politicas
 # 1. Identificação do Provedor (Groq na Nuvem vs. Ollama Local)
 chave_groq = None
 
-try:
-    if "GROQ_API_KEY" in st.secrets:
-        chave_groq = st.secrets["GROQ_API_KEY"]
-except Exception:
-    pass
-
-if not chave_groq:
-    chave_groq = os.getenv("GROQ_API_KEY")
-
 if chave_groq:
-    print("🚀 [Provedor Ativo] Modo Nuvem: Groq (llama-3.1-8b-instant)")
     client = OpenAI(
         base_url="https://api.groq.com/openai/v1", api_key=chave_groq
     )
-    MODELO = "llama-3.1-8b-instant"
+    try:
+        modelos_disponiveis = [m.id for m in client.models.list().data]
+        print(f"📋 Modelos Groq ativos na sua conta: {modelos_disponiveis}")
+
+        # Lista de preferência para Function Calling
+        prioridades = [
+            "llama-3.1-8b-instant",
+            "llama-3.3-70b-versatile",
+            "llama3-8b-8192",
+            "llama3-70b-8192",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it",
+        ]
+        MODELO = next(
+            (m for m in prioridades if m in modelos_disponiveis),
+            modelos_disponiveis[0] if modelos_disponiveis else "llama3-8b-8192",
+        )
+    except Exception as e:
+        print(f"⚠️ Erro ao listar modelos da Groq: {e}")
+        MODELO = "llama3-8b-8192"
+
+    print(f"🚀 [Provedor Ativo] Groq Cloud | Modelo selecionado: {MODELO}")
 else:
-    print(
-        "⚠️ [Provedor Ativo] Chave Groq não detectada. Tentando Ollama local..."
-    )
-    client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     MODELO = "qwen2.5:7b-instruct-q4_K_M"
+    client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+    print(f"⚠️ [Provedor Ativo] Ollama Local | Modelo: {MODELO}")
 
 MAPA_TOOLS = {
     "buscar_produtos": buscar_produtos,
