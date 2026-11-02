@@ -115,7 +115,8 @@ streamlit run app.py
 ````
 Open your browser at http://localhost:8501.
 
-👨‍💻 Candidate & Submission Info
+#👨‍💻 Candidate & Submission Info
+
 Candidate: Gabriel Custodio de Abreu
 
 Role: AI Engineer – Full-Stack para Aplicações com IA Generativa
