@@ -2,36 +2,39 @@ import streamlit as st
 from agent import responder_mensagem
 
 st.set_page_config(
-    page_title="Empório da Música - Atendimento Virtual",
-    page_icon="🎸",
-    layout="centered",
+    page_title="Empório da Música - Atendimento", page_icon="🎸", layout="centered"
 )
 
 st.title("🎸 Empório da Música")
 st.caption(
-    "Assistente virtual especializado em instrumentos musicais, pedidos e políticas da loja."
+    "Assistente virtual oficial - Instrumentos musicais, pedidos e políticas da loja"
 )
 
-# Inicializa o histórico na sessão do Streamlit
+# Inicializa o histórico na sessão
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Exibe as mensagens trocadas anteriormente
+# Exibe as mensagens já trocadas
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Captura nova entrada do usuário
-if prompt := st.chat_input("Digite sua dúvida sobre produtos, pedidos ou políticas..."):
-    # Renderiza e salva mensagem do usuário
+# Entrada do usuário
+if prompt := st.chat_input("Como posso ajudar você hoje?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Gera a resposta do agente
-    with st.chat_message("assistant"), st.spinner("Consultando dados da loja..."):
-        resposta = responder_mensagem(st.session_state.messages)
-        st.markdown(resposta)
+    # Processamento com indicador visual
+    with st.chat_message("assistant"):
+        with st.spinner("Consultando dados da loja..."):
+            try:
+                resposta = responder_mensagem(st.session_state.messages)
+            except Exception as e:
+                print(f"[Erro no app.py]: {e}")
+                resposta = "Desculpe, tive uma oscilação momentânea na conexão. Poderia repetir sua dúvida?"
 
-    # Salva a resposta no histórico da conversa
-    st.session_state.messages.append({"role": "assistant", "content": resposta})
+            st.markdown(resposta)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": resposta}
+            )
