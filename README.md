@@ -23,19 +23,19 @@ Following Artefact's core case guideline—**"solve it in the simplest way possi
                   └─────────┬────────────────────┬─────────┘
                             │                    │
               Tool Calling  ▼                    ▼ Tool Calling
-   ┌────────────────────────────────┐   ┌────────────────────────────────┐
-   │   buscar_produtos(termo, ...)  │   │   consultar_politicas(duvida)  │
-   │   consultar_pedido(order_id)   │   │       (Unstructured RAG)       │
-   │    (Structured SQL Engine)     │   └───────────────┬────────────────┘
-   └───────────────┬────────────────┘                   │
-                   │                           pypdf Text Matcher
-                   ▼                       (Zero vector-db overhead)
-           SQLite Database                              │
-        (emporio_musica.db)                             ▼
-                                                politicas_da_loja.pdf
-                                                        │
-                   ┌────────────────────────────────────┘
-                   ▼
+    ┌────────────────────────────────┐   ┌────────────────────────────────┐
+    │   buscar_produtos(termo, ...)  │   │   consultar_politicas(duvida)  │
+    │   consultar_pedido(order_id)   │   │       (Unstructured RAG)       │
+    │    (Structured SQL Engine)     │   └───────────────┬────────────────┘
+    └───────────────┬────────────────┘                   │
+                    │                           pypdf Text Matcher
+                    ▼                       (Zero vector-db overhead)
+            SQLite Database                              │
+         (emporio_musica.db)                             ▼
+                                                 politicas_da_loja.pdf
+                                                         │
+                    ┌────────────────────────────────────┘
+                    ▼
       Local Ollama Inference Engine
       (qwen2.5:7b-instruct-q4_K_M)
       Listening on localhost:11434
