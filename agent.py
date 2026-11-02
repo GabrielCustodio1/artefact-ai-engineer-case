@@ -5,10 +5,11 @@ import streamlit as st
 from openai import OpenAI
 from tools import buscar_produtos, consultar_pedido, consultar_politicas
 
-# 1. Configuração do Provedor (Groq na Nuvem vs. Ollama Local)
+# 1. Identificação do Provedor (Groq na Nuvem vs. Ollama Local)
 chave_groq = None
+
 try:
-    if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+    if "GROQ_API_KEY" in st.secrets:
         chave_groq = st.secrets["GROQ_API_KEY"]
 except Exception:
     pass
@@ -17,11 +18,11 @@ if not chave_groq:
     chave_groq = os.getenv("GROQ_API_KEY")
 
 if chave_groq:
-    # Ambiente Nuvem (Streamlit Cloud via Groq)
+    print("🚀 [Provedor Ativo] Modo Nuvem: Groq (llama-3.1-8b-instant)")
     client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=chave_groq)
     MODELO = "llama-3.1-8b-instant"
 else:
-    # Ambiente Local (Ollama)
+    print("⚠️ [Provedor Ativo] Chave Groq não detectada. Tentando Ollama local...")
     client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     MODELO = "qwen2.5:7b-instruct-q4_K_M"
 
@@ -31,7 +32,7 @@ MAPA_TOOLS = {
     "consultar_politicas": consultar_politicas,
 }
 
-# 2. Definição formal das ferramentas
+# 2. Especificação formal das ferramentas (Function Calling Schema)
 TOOLS = [
     {
         "type": "function",
