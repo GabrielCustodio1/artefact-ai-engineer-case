@@ -13,48 +13,34 @@ if not PDF_PATH.exists():
 
 
 # Funcao de busca de informacoes dos produtos
-def buscar_produtos(termo: str = None, preco_maximo: float = None) -> str:
-    # query base e uma lista vazia de parâmetros
-    query = """
-        SELECT p.name, p.price_brl, p.stock_quantity, c.category_name, p.description
-        FROM products p
-        JOIN categories c ON p.category_id = c.category_id
-        WHERE p.status = 'active' AND p.stock_quantity > 0
-    """
+def buscar_produtos(termo: str = None, preco_maximo: float = None):
+    conn = sqlite3.connect("data/emporio_musica.db")
+    cursor = conn.cursor()
+
+    query = "SELECT id, name, category, price_brl, stock_quantity FROM products WHERE 1=1"
     params = []
 
-    # Se o usuário passou um preço máximo, adicionamos a condição:
+    # Se o termo for preenchido e diferente de 'todos', filtra pelo nome ou categoria
+    if termo and termo.strip().lower() not in ["todos", "tudo", "geral", ""]:
+        query += " AND (LOWER(name) LIKE ? OR LOWER(category) LIKE ?)"
+        termo_sql = f"%{termo.strip().lower()}%"
+        params.extend([termo_sql, termo_sql])
+
     if preco_maximo is not None:
-        query += " AND p.price_brl <= ?"
+        query += " AND price_brl <= ?"
         params.append(preco_maximo)
 
-    # Se o usuário passou um termo de busca, procuramos com 'LIKE' (busca por aproximação)
-    if termo:
-        query += (
-            " AND (p.name LIKE ? OR p.description LIKE ? OR c.category_name LIKE ?)"
-        )
-        termo_busca = f"%{termo}%"
-        params.extend([termo_busca, termo_busca, termo_busca])
+    cursor.execute(query, params)
+    produtos = cursor.fetchall()
+    conn.close()
 
-    # Limitamos o resultado para não sobrecarregar o prompt da LLM
-    query += " LIMIT 10"
+    if not produtos:
+        return "Nenhum instrumento encontrado com esses critérios."
 
-    # Formatacao da busca para facilitar a leitura da LLM
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        linhas = cursor.fetchall()
-
-    if not linhas:
-        return "Nenhum produto encontrado com os critérios informados."
-
-    # Formata o resultado em linhas amigáveis
     resultado = []
-    for row in linhas:
+    for p in produtos:
         resultado.append(
-            f"- Produto: {row['name']} | Preço: R$ {row['price_brl']:.2f} | "
-            f"Categoria: {row['category_name']} | Estoque: {row['stock_quantity']} un."
+            f"ID: {p[0]} | Nome: {p[1]} | Categoria: {p[2]} | Preço: R$ {p[3]:.2f} | Estoque: {p[4]}"
         )
 
     return "\n".join(resultado)
