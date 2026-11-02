@@ -1,28 +1,12 @@
 import json
-import os
 
-import streamlit as st
 from openai import OpenAI
 from tools import buscar_produtos, consultar_pedido, consultar_politicas
 
-# 1. Configuração do Provedor de Inferência
-# Utiliza Groq na nuvem com chave configurada ou recai sobre o Ollama local
-chave_groq = None
-try:
-    if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
-        chave_groq = st.secrets["GROQ_API_KEY"]
-except Exception:
-    pass
-
-if not chave_groq:
-    chave_groq = os.getenv("GROQ_API_KEY")
-
-if chave_groq:
-    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=chave_groq)
-    MODELO = "llama-3.1-8b-instant"
-else:
-    client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
-    MODELO = "qwen2.5:7b-instruct-q4_K_M"
+# 1. Configuração do Provedor de Inferência Local (Ollama)
+# Execução 100% offline e local, garantindo total privacidade dos dados
+client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+MODELO = "qwen2.5:7b-instruct-q4_K_M"
 
 MAPA_TOOLS = {
     "buscar_produtos": buscar_produtos,
@@ -41,7 +25,7 @@ TOOLS = [
                 "properties": {
                     "termo": {
                         "type": "string",
-                        "description": "Nome, modelo ou categoria do instrumento (ex.: 'violão', 'guitarra', 'teclado').",
+                        "description": "Nome, modelo ou categoria do instrumento (ex.: 'violão', 'baixo', 'guitarra', 'teclado').",
                     },
                     "preco_maximo": {
                         "type": "number",
@@ -99,12 +83,12 @@ DIRETRIZES E REGRAS MANDATÓRIAS:
    - Para dados de pedidos efetuados: utilize `consultar_pedido`.
 3. ESCOPO DO NEGÓCIO:
    - A loja vende EXCLUSIVAMENTE instrumentos musicais. Não comercializamos acessórios avulsos (cordas, palhetas, correias, cabos, suportes ou amplificadores). Caso o cliente solicite acessórios, explique com cortesia que focamos unicamente nos instrumentos.
-   - Caso o utilizador envie mensagens sobre tópicos totalmente fora de contexto (ex.: futebol, receitas, política, programação), responda com simpatia lembrando que o seu papel é exclusivamente o suporte aos clientes da Empório da Música.
+   - Caso o usuário envie mensagens sobre tópicos totalmente fora de contexto (ex.: futebol, receitas, política, programação), responda com simpatia lembrando que o seu papel é exclusivamente o suporte aos clientes da Empório da Música.
 """
 
 
 def responder_mensagem(historico_mensagens: list, max_iteracoes: int = 4) -> str:
-    """Executa o ciclo de raciocínio e chamada de ferramentas do agente."""
+    """Executa o ciclo de raciocínio e chamada sequencial de ferramentas do agente local."""
     mensagens = [{"role": "system", "content": SYSTEM_PROMPT}] + list(
         historico_mensagens
     )
@@ -122,7 +106,10 @@ def responder_mensagem(historico_mensagens: list, max_iteracoes: int = 4) -> str
                 temperature=0.0,
             )
         except Exception as erro_api:
-            return f"Ocorreu um erro temporário na comunicação com o assistente: {erro_api!s}"
+            return (
+                f"Erro na comunicação com o Ollama local: {erro_api!s}. "
+                "Certifique-se de que o serviço do Ollama está rodando localmente com o modelo baixado."
+            )
 
         mensagem_assistente = resposta.choices[0].message
 
@@ -134,11 +121,10 @@ def responder_mensagem(historico_mensagens: list, max_iteracoes: int = 4) -> str
 
         mensagens.append(mensagem_assistente)
 
-        # Processamento sequencial das ferramentas solicitadas
+        # Execução das ferramentas solicitadas
         for tool_call in mensagem_assistente.tool_calls:
             nome_funcao = tool_call.function.name
 
-            # Tratamento seguro contra argumentos JSON malformados
             try:
                 argumentos = json.loads(tool_call.function.arguments)
             except (json.JSONDecodeError, TypeError) as erro_json:

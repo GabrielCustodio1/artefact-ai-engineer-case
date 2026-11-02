@@ -8,7 +8,6 @@ from pypdf import PdfReader
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "emporio_musica.db"
 
-# Localização do manual de políticas da loja
 PDF_PATH = BASE_DIR / "data" / "politicas_da_loja.pdf"
 if not PDF_PATH.exists():
     PDF_PATH = BASE_DIR / "data" / "raw_data" / "politicas_da_loja.pdf"
@@ -23,69 +22,64 @@ def remover_acentos(texto: str) -> str:
 
 
 def buscar_produtos(termo: str = None, preco_maximo: float = None) -> str:
-    """Consulta o catálogo da loja aplicando normalização de termos, ordenação por preço e verificação de stock."""
-    # Lista de stopwords e termos de ordenação a remover da palavra-chave de pesquisa
-    stopwords_ordenacao = {
-        "mais",
-        "barato",
-        "barata",
-        "baratos",
-        "baratas",
-        "menor",
-        "baixo",
-        "caro",
-        "cara",
-        "caros",
-        "caras",
-        "maior",
-        "alto",
-        "preco",
-        "valor",
-    }
-    stopwords_gerais = {
-        "de",
-        "do",
-        "da",
-        "dos",
-        "das",
-        "para",
-        "com",
-        "um",
-        "uma",
-        "uns",
-        "umas",
-        "o",
-        "a",
-        "os",
-        "as",
-        "em",
-        "no",
-        "na",
-        "nos",
-        "nas",
-        "loja",
-        "instrumento",
-    }
-
-    direcao_ordem = "ASC"  # Ordenação padrão: menor preço primeiro
+    """Consulta o catálogo da loja aplicando normalização de termos, ordenação e verificação precisa de orçamento/estoque."""
+    direcao_ordem = "ASC"
     termo_limpo = ""
 
     if termo:
         termo_norm = remover_acentos(termo)
-        palavras = re.findall(r"\b\w+\b", termo_norm)
 
-        # Deteta se há intenção explícita de ordenação
-        if any(
-            p in {"caro", "cara", "caros", "caras", "maior", "alto"} for p in palavras
-        ):
+        # 1. Detecta direção de ordenação (maior vs menor preço)
+        if re.search(r"\b(caro|caros|cara|caras|maior|alto)\b", termo_norm):
             direcao_ordem = "DESC"
 
-        # Filtra stopwords mantendo os termos relevantes do instrumento/modelo
-        palavras_relevantes = [
-            p
-            for p in palavras
-            if p not in stopwords_ordenacao and p not in stopwords_gerais
-        ]
+        # 2. Remove expressões específicas de preço baixo sem remover o instrumento 'baixo'
+        termo_norm = re.sub(r"\b(pre[cç]o|valor|mais)\s+baix[oa]s?\b", "", termo_norm)
+
+        # 3. Stopwords estritas (nunca incluir 'baixo', 'alto' ou nomes de instrumentos aqui)
+        stopwords = {
+            "mais",
+            "barato",
+            "barata",
+            "baratos",
+            "baratas",
+            "menor",
+            "maior",
+            "caro",
+            "cara",
+            "caros",
+            "caras",
+            "preco",
+            "precos",
+            "valor",
+            "valores",
+            "de",
+            "do",
+            "da",
+            "dos",
+            "das",
+            "para",
+            "com",
+            "um",
+            "uma",
+            "uns",
+            "umas",
+            "o",
+            "a",
+            "os",
+            "as",
+            "em",
+            "no",
+            "na",
+            "nos",
+            "nas",
+            "loja",
+            "instrumento",
+            "instrumentos",
+        }
+
+        palavras = re.findall(r"\b\w+\b", termo_norm)
+        palavras_relevantes = [p for p in palavras if p not in stopwords]
         termo_limpo = " ".join(palavras_relevantes)
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -93,7 +87,7 @@ def buscar_produtos(termo: str = None, preco_maximo: float = None) -> str:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # 1. Consulta produtos ativos e disponíveis em stock
+        # 1. Busca produtos ativos, em estoque e dentro do orçamento (se informado)
         query_ativa = """
             SELECT p.name, p.price_brl, p.stock_quantity, c.category_name, p.description
             FROM products p
@@ -120,37 +114,72 @@ def buscar_produtos(termo: str = None, preco_maximo: float = None) -> str:
             for row in linhas:
                 resultado.append(
                     f"- Produto: {row['name']} | Preço: R$ {row['price_brl']:.2f} | "
-                    f"Categoria: {row['category_name']} | Stock: {row['stock_quantity']} un."
+                    f"Categoria: {row['category_name']} | Estoque: {row['stock_quantity']} un."
                 )
             return "\n".join(resultado)
 
-        # 2. Se nada foi retornado, verifica se o item existe mas está esgotado ou inativo
+        # 2. Diagnóstico de Fallback:
+        # Caso A: Produto existe e está em estoque, mas custa mais que o preço_maximo solicitado
+        if preco_maximo is not None and termo_limpo:
+            query_acima = """
+                SELECT p.name, p.price_brl, p.stock_quantity, c.category_name
+                FROM products p
+                JOIN categories c ON p.category_id = c.category_id
+                WHERE p.status = 'active' AND p.stock_quantity > 0 AND p.price_brl > ?
+                  AND (unaccent(p.name) LIKE ? OR unaccent(p.description) LIKE ? OR unaccent(c.category_name) LIKE ?)
+                ORDER BY p.price_brl ASC
+                LIMIT 5
+            """
+            cursor.execute(
+                query_acima,
+                [
+                    preco_maximo,
+                    f"%{termo_limpo}%",
+                    f"%{termo_limpo}%",
+                    f"%{termo_limpo}%",
+                ],
+            )
+            acima = cursor.fetchall()
+
+            if acima:
+                itens_acima = [
+                    f"- {row['name']} | Preço: R$ {row['price_brl']:.2f} (Estoque: {row['stock_quantity']} un.)"
+                    for row in acima
+                ]
+                return (
+                    f"Não encontramos modelos de '{termo_limpo}' dentro do orçamento de até R$ {preco_maximo:.2f}. "
+                    f"Os modelos disponíveis em estoque possuem valores superiores:\n"
+                    + "\n".join(itens_acima)
+                )
+
+        # Caso B: Produto existe no catálogo, mas está com estoque zerado ou status inativo
         if termo_limpo:
-            query_esgotados = """
-                SELECT p.name, p.stock_quantity, p.status
+            query_indisponiveis = """
+                SELECT p.name, p.price_brl, p.stock_quantity, p.status
                 FROM products p
                 JOIN categories c ON p.category_id = c.category_id
                 WHERE (unaccent(p.name) LIKE ? OR unaccent(p.description) LIKE ? OR unaccent(c.category_name) LIKE ?)
+                  AND (p.stock_quantity = 0 OR p.status != 'active')
                 LIMIT 5
             """
-            cursor.execute(query_esgotados, [f"%{termo_limpo}%"] * 3)
-            esgotados = cursor.fetchall()
+            cursor.execute(query_indisponiveis, [f"%{termo_limpo}%"] * 3)
+            indisponiveis = cursor.fetchall()
 
-            if esgotados:
-                itens_esgotados = [
-                    f"- {row['name']} (Stock atual: {row['stock_quantity']} un. - Status: {row['status']})"
-                    for row in esgotados
+            if indisponiveis:
+                itens_indisp = [
+                    f"- {row['name']} (Estoque: {row['stock_quantity']} un. - Status: {row['status']})"
+                    for row in indisponiveis
                 ]
                 return (
-                    "O produto foi localizado no catálogo, mas encontra-se esgotado ou inativo de momento:\n"
-                    + "\n".join(itens_esgotados)
+                    f"O produto correspondente a '{termo_limpo}' foi localizado no catálogo, mas encontra-se esgotado ou inativo no momento:\n"
+                    + "\n".join(itens_indisp)
                 )
 
     return "Nenhum produto encontrado com os critérios informados."
 
 
 def consultar_pedido(order_id: str) -> str:
-    """Busca o estado, previsão de entrega e itens de um pedido pelo ID."""
+    """Busca o status, previsão de entrega e itens de um pedido pelo ID."""
     order_id = str(order_id).strip()
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -183,7 +212,7 @@ def consultar_pedido(order_id: str) -> str:
     detalhes = [
         f"Pedido #{pedido['order_id']}:",
         f"- Data: {pedido['order_date']}",
-        f"- Estado: {pedido['status']}",
+        f"- Status: {pedido['status']}",
         f"- Rastreio: {pedido['tracking_code'] if pedido['tracking_code'] else 'Ainda não disponível'}",
         f"- Previsão de entrega: {pedido['estimated_delivery'] if pedido['estimated_delivery'] else 'A calcular'}",
         f"- Total: R$ {pedido['total_brl']:.2f}",
@@ -201,7 +230,7 @@ def consultar_pedido(order_id: str) -> str:
 def consultar_politicas(duvida: str) -> str:
     """Consulta as regras oficiais da loja (frete, trocas, devoluções, horários, endereço e garantia)."""
     if not PDF_PATH.exists():
-        return "O ficheiro de políticas da loja não foi encontrado no caminho esperado."
+        return "O arquivo de políticas da loja não foi encontrado no caminho esperado."
 
     reader = PdfReader(PDF_PATH)
     duvida_norm = remover_acentos(duvida)
@@ -215,15 +244,11 @@ def consultar_politicas(duvida: str) -> str:
         pontuacao = sum(1 for termo in termos if termo in texto_norm)
         paginas_relevantes.append((pontuacao, i + 1, texto.strip()))
 
-    # Ordena as páginas por relevância de pontuação
     paginas_relevantes.sort(key=lambda x: x[0], reverse=True)
 
-    # Retorna o conteúdo integral sem truncagem a 1000 caracteres
     selecionadas = [p for p in paginas_relevantes if p[0] > 0]
     if not selecionadas:
-        selecionadas = paginas_relevantes[
-            :2
-        ]  # Caso de salvaguarda: retorna as duas primeiras páginas
+        selecionadas = paginas_relevantes[:2]
 
     resultado = []
     for _, num_pag, texto in selecionadas[:2]:
