@@ -1,127 +1,81 @@
-# Empório da Música - Local-First AI Customer Support Agent
-### Technical Case: AI Engineer – Full-Stack para Aplicações com IA Generativa | Artefact Brazil
+# 🎸 Empório da Música - AI Assistant
 
-An autonomous, enterprise-grade conversational AI assistant developed for **Empório da Música**, a specialized musical instrument store founded in 2008 in Campo Grande/MS. 
-
-Built with a **Local-First (Self-Hosted) Architecture**, the system processes structured inventory and customer order records from SQLite, extracts corporate policies from unstructured PDF documentation, and interacts with customers via an intuitive Streamlit interface—operating with **zero external cloud API dependencies, zero token costs, and 100% data privacy**.
+Assistente conversacional inteligente concebido para o suporte de atendimento ao cliente da loja **Empório da Música** (fundada em 2008 em Campo Grande/MS), integrando modelos de linguagem via chamada de ferramentas (*function calling*) com bases de dados relacionais e extração de políticas em PDF.
 
 ---
 
-## 🏛️ System Architecture
+## 🛠️ Arquitetura e Decisões Técnicas
 
-Following Artefact's core case guideline—**"solve it in the simplest way possible"**—the solution avoids artificial complexity (such as standing vector databases or bloated multi-agent frameworks) in favor of deterministic, observable, and maintainable software components:
-
-                  ┌────────────────────────────────────────┐
-                  │        Streamlit Web Interface         │
-                  │               (app.py)                 │
-                  └──────────────────┬─────────────────────┘
-                                     │ User Query
-                                     ▼
-                  ┌────────────────────────────────────────┐
-                  │       Agentic Controller (agent.py)    │
-                  │  (Local ReAct Loop via OpenAI SDK)     │
-                  └─────────┬────────────────────┬─────────┘
-                            │                    │
-              Tool Calling  ▼                    ▼ Tool Calling
-    ┌────────────────────────────────┐   ┌────────────────────────────────┐
-    │   buscar_produtos(termo, ...)  │   │   consultar_politicas(duvida)  │
-    │   consultar_pedido(order_id)   │   │       (Unstructured RAG)       │
-    │    (Structured SQL Engine)     │   └───────────────┬────────────────┘
-    └───────────────┬────────────────┘                   │
-                    │                           pypdf Text Matcher
-                    ▼                       (Zero vector-db overhead)
-            SQLite Database                              │
-         (emporio_musica.db)                             ▼
-                                                 politicas_da_loja.pdf
-                                                         │
-                    ┌────────────────────────────────────┘
-                    ▼
-      Local Ollama Inference Engine
-      (qwen2.5:7b-instruct-q4_K_M)
-      Listening on localhost:11434
+* **Linguagem Principal:** Python 3.10+
+* **Interface de Utilizador:** Streamlit
+* **Gestão de Ferramentas e Inferência:**
+  * **Modo Nuvem (Produção / Demonstração):** Groq API utilizando o modelo `llama-3.1-8b-instant`.
+  * **Modo Local (Privacidade / Offline):** Ollama executando o modelo `qwen2.5:7b-instruct-q4_K_M`.
+* **Mapeamento de Ferramentas (*Tool Calling*):** O agente avalia a mensagem do utilizador e invoca as ferramentas necessárias de forma sequencial num ciclo controlado de execução.
+* **Persistência Relacional:** SQLite local para produtos, clientes e histórico de encomendas.
+* **Recuperação Documental:** Extração e ranqueamento léxico via `pypdf`, eliminando limites de corte de texto para assegurar respostas completas sobre horários, endereços e taxas.
 
 ---
 
-## 💡 Key Architectural Pillars
+## 🚀 Como Executar o Projeto
 
-### 1. Local-First Inference & Data Sovereignty
-- **Model:** `qwen2.5:7b-instruct-q4_K_M` running locally via [Ollama](https://ollama.com/).
-- **Privacy:** Customer purchase history, tracking codes, and internal documents remain within the local host boundary.
-- **Cost & Availability:** Zero operational cost per token; immune to public cloud rate limits, network outages, and third-party credential management issues.
-
-### 2. Structured Relational Engine (`tools.py`)
-- Direct parameter-safe interaction with `emporio_musica.db` using Python's standard `sqlite3`.
-- **`buscar_produtos`:** Sanitizes conversational stop-words (e.g., *"cheapest"*, *"best"*), supports category and keyword filtering, enforces budget caps, and automatically sorts results in ascending price order (`ORDER BY price_brl ASC`).
-- **`consultar_pedido`:** Performs multi-table SQL joins between `orders`, `order_items`, and `products` to retrieve complete order tracking timelines, carrier codes, and itemized summaries.
-
-### 3. Lightweight Policy Extraction (`tools.py`)
-- **`consultar_politicas`:** For an 8-page document (~3,500 words), deploying vector stores (ChromaDB/FAISS) introduces unnecessary memory bloat and platform compilation issues. 
-- The engine uses `pypdf` with a keyword-frequency relevance scoring algorithm to extract authoritative policy sections (7-day right of withdrawal, warranty deadlines, shipping rules) deterministically.
-
-### 4. ReAct Execution Loop & Guardrails (`agent.py`)
-- Employs native Function Calling through the standard OpenAI client abstraction pointing to `http://localhost:11434/v1`.
-- Can dispatch parallel or sequential tool invocations (e.g., retrieving guitars under R\$ 800 while simultaneously looking up return shipping policies).
-- **Anti-Hallucination:** An amnesic system prompt strictly prohibits fabricating prices, models, or rules without active tool verification.
-- **Business Scope:** Requests for accessories (strings, picks, cables, straps, amplifiers) are politely rejected, respecting the store's exclusive focus on instruments.
-
----
-
-## 📁 Repository Structure
-
-```text
-artefact-ai-engineer-case/
-├── app.py                 # Streamlit web chat UI with state retention
-├── agent.py               # ReAct control loop, tool definitions & local Ollama client
-├── tools.py               # Parameterized SQL database queries & pypdf policy search
-├── requirements.txt       # Production dependencies (streamlit, openai, pypdf)
-├── .gitignore             # Virtual environments, bytecode, and cache exclusions
-├── README.md              # Technical documentation (in English)
-└── data/
-    ├── emporio_musica.db  # Relational database (orders, order_items, products)
-    └── politicas_da_loja.pdf # Official store policy manual
-````
-
-# 🚀 Quickstart & Reproduction GuidePrerequisitesPython 3.10+Ollama installed and running
-
-### Step 1: Download & Run the Local Model
-
-````Bash
-ollama run qwen2.5:7b-instruct-q4_K_M
-````
-(Once downloaded, Ollama will serve the OpenAI-compatible API on http://localhost:11434/v1).
-
-### Step 2: Clone & Set Up the Environment
-
-````Bash
+### 1. Clonar o Repositório
+```bash
 git clone [https://github.com/GabrielCustodio1/artefact-ai-engineer-case.git](https://github.com/GabrielCustodio1/artefact-ai-engineer-case.git)
-
 cd artefact-ai-engineer-case
-
+2. Criar e Ativar o Ambiente Virtual
+Bash
 python -m venv .venv
-````
-````
-# Windows (PowerShell):
+# No Windows (PowerShell):
 .venv\Scripts\Activate.ps1
-
-# Linux/macOS:
+# No Linux/macOS:
 source .venv/bin/activate
-
+3. Instalar Dependências
+Bash
 pip install -r requirements.txt
-````
-### Step 3: Run the Application
+4. Inicializar a Base de Dados Local
+Bash
+python init_db.py
+5. Configurar o Provedor de LLM
+Opção A — Groq API (Recomendado):
+Defina a variável de ambiente:
 
-````Bash
+Bash
+# Windows PowerShell:
+\$env:GROQ_API_KEY="sua_chave_aqui"
+# Linux/macOS:
+export GROQ_API_KEY="sua_chave_aqui"
+(Em alternativa, crie o ficheiro .streamlit/secrets.toml contendo GROQ_API_KEY = "sua_chave").
+
+Opção B — Ollama (Execução 100% Local):
+Sem chave configurada, o agente liga-se automaticamente ao Ollama em http://localhost:11434/v1. Certifique-se de que o serviço está ativo e o modelo descarregado:
+
+Bash
+ollama run qwen2.5:7b-instruct-q4_K_M
+6. Iniciar a Aplicação
+Bash
 streamlit run app.py
-````
-Open your browser at http://localhost:8501.
+🔍 Ferramentas Disponíveis
+buscar_produtos: Pesquisa de instrumentos musicais com suporte a normalização de texto (sem sensibilidade a acentuação), remoção de stopwords, ordenação por preço e verificação de rutura de stock.
 
-# 👨‍💻 Candidate & Submission Info
+consultar_pedido: Localização de encomendas por ID, exibindo estado do pedido, código de rastreamento, data estimada de entrega e itens comprados.
 
+consultar_politicas: Consulta integral das regras operacionais da loja a partir do manual em PDF (endereço físico, horários de funcionamento, regras de frete, prazos de arrependimento e garantia).
 
-Candidate: Gabriel Custodio de Abreu
+⚠️ Limitações Conhecidas
+Execução Sequencial de Ferramentas: Quando o modelo solicita múltiplas ferramentas numa única iteração, a execução ocorre sequencialmente e não em paralelo assíncrono.
 
-Role: AI Engineer – Full-Stack para Aplicações com IA Generativa
+Preço Histórico de Encomendas: O esquema relacional em order_items não armazena o preço unitário histórico no momento da compra; o valor apresentado provém do catálogo atual da tabela products.
 
-Company: Artefact Brazil
+Autenticação de Pedidos: Por se tratar de um protótipo de demonstração, a consulta de encomendas não exige validação de identidade do cliente (como CPF ou e-mail vinculado).
 
-Submission Date: November 2026
+Recuperação Léxica em PDF: A busca documental assenta em ranqueamento léxico de termos com pontuação por página, sem recurso a embeddings densos ou base de vetores, mantendo a solução leve e sem dependências de infraestrutura complexa.
+
+🤖 Uso de Assistentes de IA
+Durante o desenvolvimento deste desafio, assistentes de IA generativa foram utilizados para:
+
+Refatoração de consultas SQL e otimização de funções de normalização Unicode no SQLite.
+
+Estruturação e formatação de schemas JSON para a especificação das ferramentas no padrão OpenAI.
+
+Revisão de casos de teste de conversação e refinamento dos blocos de tratamento de exceções da aplicação.
