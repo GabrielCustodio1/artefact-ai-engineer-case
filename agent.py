@@ -4,7 +4,7 @@ from openai import OpenAI
 import streamlit as st
 from tools import buscar_produtos, consultar_pedido, consultar_politicas
 
-# 1. Recuperação da Chave Groq
+# 1. Recuperação da Chave de API
 chave_groq = None
 try:
     if hasattr(st, "secrets"):
@@ -18,39 +18,46 @@ try:
                     chave_groq = v.strip()
                     break
 except Exception as e:
-    print(f"Aviso ao ler st.secrets: {e}")
+    print(f"Aviso ao ler segredos: {e}")
 
 if not chave_groq:
     chave_groq = os.getenv("GROQ_API_KEY") or os.getenv("groq_api_key")
 
-# 2. Inicialização do Cliente e Seleção de Modelo
+# 2. Inicialização e Teste Real do Modelo Ativo na Groq
 if chave_groq:
     client = OpenAI(
         base_url="https://api.groq.com/openai/v1", api_key=chave_groq
     )
-    try:
-        modelos_disponiveis = [m.id for m in client.models.list().data]
-        prioridades = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "llama3-8b-8192",
-            "gemma2-9b-it",
-        ]
-        MODELO = next(
-            (m for m in prioridades if m in modelos_disponiveis),
-            (
-                modelos_disponiveis[0]
-                if modelos_disponiveis
-                else "llama-3.1-8b-instant"
-            ),
-        )
-    except Exception:
+
+    # Lista de modelos candidatos suportados na Groq
+    candidatos = [
+        "llama-3.1-8b-instant",
+        "llama3-70b-8192",
+        "llama-3.3-70b-versatile",
+        "mixtral-8x7b-32768",
+    ]
+
+    MODELO = None
+    for m in candidatos:
+        try:
+            # Faz um ping de teste de 1 token para validar se a conta tem acesso real
+            client.chat.completions.create(
+                model=m,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1,
+            )
+            MODELO = m
+            print(f"✅ [Provedor Groq] Modelo validado e operacional: {MODELO}")
+            break
+        except Exception as err:
+            print(f"ℹ️ Modelo '{m}' indisponível para esta conta ({err}).")
+
+    if not MODELO:
         MODELO = "llama-3.1-8b-instant"
-    print(f"🚀 [Provedor Ativo] Groq Cloud | Modelo: {MODELO}")
 else:
     client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     MODELO = "qwen2.5:7b-instruct-q4_K_M"
-    print(f"⚠️ [Provedor Ativo] Ollama Local | Modelo: {MODELO}")
+    print(f"⚠️ [Provedor Local] Ollama: {MODELO}")
 
 MAPA_TOOLS = {
     "buscar_produtos": buscar_produtos,
@@ -58,25 +65,26 @@ MAPA_TOOLS = {
     "consultar_politicas": consultar_politicas,
 }
 
-# 3. Schema estrito das ferramentas
+# 3. Especificação das Ferramentas
 TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "buscar_produtos",
-            "description": "Consulta o catálogo de instrumentos musicais da loja. Para ver o catálogo geral ou todos os instrumentos, passe termo=''.",
+            "description": "Consulta o catálogo da loja para encontrar instrumentos musicais disponíveis. Para ver o catálogo completo ou geral, use termo='todos'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "termo": {
                         "type": "string",
-                        "description": "Nome ou categoria do instrumento (ex: 'violão', 'guitarra', 'teclado') ou string vazia '' para todos.",
+                        "description": "Nome ou categoria do instrumento (ex: 'violão', 'guitarra', 'teclado') ou 'todos' para ver a lista geral.",
                     },
                     "preco_maximo": {
                         "type": "number",
-                        "description": "Preço teto em reais (BRL).",
+                        "description": "Preço máximo em reais (BRL).",
                     },
                 },
+                "required": ["termo"],
             },
         },
     },
@@ -90,7 +98,7 @@ TOOLS = [
                 "properties": {
                     "order_id": {
                         "type": "string",
-                        "description": "ID numérico do pedido (ex.: '1', '2').",
+                        "description": "ID numérico do pedido (ex: '1', '2').",
                     }
                 },
                 "required": ["order_id"],
@@ -101,13 +109,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "consultar_politicas",
-            "description": "Consulta o manual de políticas oficiais sobre frete, trocas, devoluções, prazos e garantia.",
+            "description": "Consulta o manual oficial sobre frete, trocas, devoluções, prazos e garantia.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "duvida": {
                         "type": "string",
-                        "description": "Dúvida do cliente sobre as regras da loja (ex.: 'prazo de devolução', 'garantia').",
+                        "description": "Dúvida sobre as regras da loja (ex: 'prazo de devolução', 'garantia').",
                     }
                 },
                 "required": ["duvida"],
@@ -116,27 +124,27 @@ TOOLS = [
     },
 ]
 
-# 4. Prompt de Sistema
+# 4. Prompt do Sistema
 SYSTEM_PROMPT = """
 Você é o atendente virtual oficial da 'Empório da Música', fundada em 2008 em Campo Grande/MS.
 
 REGRAS OBRIGATÓRIAS:
-1. NÃO INVENTE NENHUM DADO: Não invente modelos, preços, estoques ou regras de políticas.
-2. USO DE FERRAMENTAS:
-   - Para instrumentos ou catálogo geral ("quais outros instrumentos tem?"): chame `buscar_produtos(termo="")`.
-   - Para pedidos: chame `consultar_pedido(order_id=...)`.
-   - Para regras, frete, devoluções ou garantias: chame `consultar_politicas(duvida=...)`.
-3. REGRA CRÍTICA PARA CHAMADA: Se decidir chamar uma ferramenta, NUNCA gere nenhum texto conversacional antes. Apenas emita a chamada da função.
-4. ESCOPO: Vendemos EXCLUSIVAMENTE instrumentos musicais. Não vendemos acessórios (palhetas, cordas avulsas, cabos, correias, amplificadores).
+1. NÃO invente instrumentos, preços, status de pedidos ou políticas. Use sempre as ferramentas.
+2. Para perguntas sobre instrumentos específicos (ex: violões, guitarras): chame buscar_produtos(termo="nome_do_instrumento").
+3. Para perguntas amplas de catálogo (ex: "quais outros instrumentos vocês têm?", "o que vocês vendem?"): chame buscar_produtos(termo="todos").
+4. Para pedidos: chame consultar_pedido(order_id=...).
+5. Para regras da loja: chame consultar_politicas(duvida=...).
+6. Se decidir chamar uma ferramenta, responda EXCLUSIVAMENTE com a chamada da ferramenta. Nunca escreva texto conversacional antes da chamada.
+7. Escopo: Vendemos EXCLUSIVAMENTE instrumentos musicais. Não vendemos acessórios (palhetas, cordas avulsas, cabos, correias, amplificadores).
 """
 
 
-# 5. Loop Reativo com Dupla Proteção de Falha
+# 5. Execução do Agente
 def responder_mensagem(
     historico_mensagens: list, max_iteracoes: int = 4
 ) -> str:
     if not chave_groq and os.environ.get("STREAMLIT_SERVER_PORT"):
-        return "⚠️ Chave Groq não configurada nos Secrets do Streamlit Cloud."
+        return "⚠️ Chave GROQ_API_KEY não configurada nos Secrets do Streamlit Cloud."
 
     mensagens = [{"role": "system", "content": SYSTEM_PROMPT}] + (
         historico_mensagens
@@ -155,23 +163,14 @@ def responder_mensagem(
                 temperature=0.0,
             )
         except Exception as erro_tool:
-            print(
-                f"[Aviso Groq] Falha no tool calling: {erro_tool}. Executando resposta direta."
+            print(f"[Aviso Tool Calling]: {erro_tool}. Tentando resposta direta.")
+            # Se a Groq falhar na chamada da ferramenta, responde em linguagem natural real
+            resposta_direta = client.chat.completions.create(
+                model=MODELO,
+                messages=mensagens,
+                temperature=0.0,
             )
-            # Fallback resiliente: responde diretamente sem quebrar a sessão
-            try:
-                resposta_direta = client.chat.completions.create(
-                    model=MODELO,
-                    messages=mensagens,
-                    temperature=0.0,
-                )
-                return (
-                    resposta_direta.choices[0].message.content
-                    or "Além de violões, nós trabalhamos com guitarras, baixos, teclados, pianos digitais, baterias e instrumentos de sopro. Gostaria de ver opções de alguma dessas categorias?"
-                )
-            except Exception as erro_final:
-                print(f"[Erro Crítico] Fallback falhou: {erro_final}")
-                return "Temos também guitarras, teclados, baixos e baterias em nosso catálogo. Deseja consultar detalhes ou preços de algum instrumento específico?"
+            return resposta_direta.choices[0].message.content
 
         mensagem_assistente = resposta.choices[0].message
 
@@ -212,4 +211,4 @@ def responder_mensagem(
                 }
             )
 
-    return "Desculpe, o processamento excedeu o limite de passos para esta consulta."
+    return "Desculpe, excedi o limite de passos para responder a esta consulta."
