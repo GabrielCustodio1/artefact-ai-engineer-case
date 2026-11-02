@@ -5,7 +5,8 @@ import streamlit as st
 from openai import OpenAI
 from tools import buscar_produtos, consultar_pedido, consultar_politicas
 
-# 1. Configuração do Provedor (Groq na Nuvem vs. Ollama Local)
+# 1. Configuração do Provedor de Inferência
+# Utiliza Groq na nuvem com chave configurada ou recai sobre o Ollama local
 chave_groq = None
 try:
     if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
@@ -17,11 +18,9 @@ if not chave_groq:
     chave_groq = os.getenv("GROQ_API_KEY")
 
 if chave_groq:
-    # Ambiente Nuvem (Streamlit Cloud via Groq)
     client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=chave_groq)
     MODELO = "llama-3.1-8b-instant"
 else:
-    # Ambiente Local (Ollama)
     client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     MODELO = "qwen2.5:7b-instruct-q4_K_M"
 
@@ -31,7 +30,6 @@ MAPA_TOOLS = {
     "consultar_politicas": consultar_politicas,
 }
 
-# 2. Definição formal das ferramentas
 TOOLS = [
     {
         "type": "function",
@@ -43,7 +41,7 @@ TOOLS = [
                 "properties": {
                     "termo": {
                         "type": "string",
-                        "description": "Nome, modelo ou categoria do instrumento (ex.: 'violão', 'guitarra').",
+                        "description": "Nome, modelo ou categoria do instrumento (ex.: 'violão', 'guitarra', 'teclado').",
                     },
                     "preco_maximo": {
                         "type": "number",
@@ -74,13 +72,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "consultar_politicas",
-            "description": "Consulta o manual de políticas oficiais da loja para responder sobre frete, trocas, devoluções, prazos e garantia.",
+            "description": "Consulta o manual de políticas oficiais da loja para responder sobre endereço, horários de funcionamento, frete, trocas, devoluções, prazos e garantia.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "duvida": {
                         "type": "string",
-                        "description": "O tema ou dúvida sobre a regra da loja (ex.: 'prazo de devolução', 'troca por defeito', 'frete').",
+                        "description": "O tema ou dúvida sobre a regra ou informação da loja (ex.: 'horário de funcionamento', 'endereço', 'prazo de devolução', 'frete Campo Grande').",
                     }
                 },
                 "required": ["duvida"],
@@ -89,61 +87,74 @@ TOOLS = [
     },
 ]
 
-# 3. Prompt de Sistema
 SYSTEM_PROMPT = """
-Você é o atendente virtual oficial da 'Empório da Música', fundada em 2008 em Campo Grande/MS.
+Você é o atendente virtual oficial da 'Empório da Música', loja fundada em 2008 em Campo Grande/MS.
+Seu tom de voz é amigável, acolhedor e profissional (informal-profissional).
 
-REGRAS CRÍTICAS E OBRIGATÓRIAS:
-1. VOCÊ NÃO SABE O CATÁLOGO DE CABEÇA: Não invente modelos, preços, estoques ou regras de políticas. É terminantemente proibido inventar dados.
-2. USO OBRIGATÓRIO DE FERRAMENTAS:
-   - Perguntas de instrumentos, valores ou estoque: chame obrigatoriamente `buscar_produtos`.
-   - Perguntas de regras, prazos, frete, devolução ou garantia: chame obrigatoriamente `consultar_politicas`.
-   - Perguntas sobre pedidos: chame obrigatoriamente `consultar_pedido`.
-3. Se a dúvida cobrir mais de um assunto, chame as ferramentas necessárias antes de responder.
-4. Escopo: Vendemos EXCLUSIVAMENTE instrumentos musicais. Não vendemos acessórios (cordas avulsas, palhetas, cabos, correias, amplificadores).
+DIRETRIZES E REGRAS MANDATÓRIAS:
+1. NUNCA INVENTE DADOS: Jamais assuma modelos, preços, prazos, estoques, endereços ou taxas. Todas as informações factuais devem provir das ferramentas.
+2. USO ESTRITO DE FERRAMENTAS:
+   - Para pesquisar instrumentos, marcas, valores ou disponibilidade: utilize `buscar_produtos`.
+   - Para regras, prazos, custos de frete, horário de atendimento, endereço físico ou garantias: utilize `consultar_politicas`.
+   - Para dados de pedidos efetuados: utilize `consultar_pedido`.
+3. ESCOPO DO NEGÓCIO:
+   - A loja vende EXCLUSIVAMENTE instrumentos musicais. Não comercializamos acessórios avulsos (cordas, palhetas, correias, cabos, suportes ou amplificadores). Caso o cliente solicite acessórios, explique com cortesia que focamos unicamente nos instrumentos.
+   - Caso o utilizador envie mensagens sobre tópicos totalmente fora de contexto (ex.: futebol, receitas, política, programação), responda com simpatia lembrando que o seu papel é exclusivamente o suporte aos clientes da Empório da Música.
 """
 
 
-# 4. Loop de Execução com Tool Calling
 def responder_mensagem(historico_mensagens: list, max_iteracoes: int = 4) -> str:
-    mensagens = [{"role": "system", "content": SYSTEM_PROMPT}] + (historico_mensagens)
+    """Executa o ciclo de raciocínio e chamada de ferramentas do agente."""
+    mensagens = [{"role": "system", "content": SYSTEM_PROMPT}] + list(
+        historico_mensagens
+    )
 
     iteracao = 0
     while iteracao < max_iteracoes:
         iteracao += 1
 
-        resposta = client.chat.completions.create(
-            model=MODELO,
-            messages=mensagens,
-            tools=TOOLS,
-            tool_choice="auto",
-            temperature=0.0,
-        )
+        try:
+            resposta = client.chat.completions.create(
+                model=MODELO,
+                messages=mensagens,
+                tools=TOOLS,
+                tool_choice="auto",
+                temperature=0.0,
+            )
+        except Exception as erro_api:
+            return f"Ocorreu um erro temporário na comunicação com o assistente: {erro_api!s}"
 
         mensagem_assistente = resposta.choices[0].message
 
-        # Se o modelo não pediu ferramentas, ele terminou a resposta final
         if not mensagem_assistente.tool_calls:
-            return mensagem_assistente.content
+            return (
+                mensagem_assistente.content
+                or "Não foi possível gerar uma resposta no momento."
+            )
 
-        # Registra a decisão de chamar ferramentas no histórico
         mensagens.append(mensagem_assistente)
 
-        # Executa todas as ferramentas solicitadas nesta rodada
+        # Processamento sequencial das ferramentas solicitadas
         for tool_call in mensagem_assistente.tool_calls:
             nome_funcao = tool_call.function.name
-            argumentos = json.loads(tool_call.function.arguments)
 
-            print(f"🔧 [Tool Call] O modelo acionou: {nome_funcao}({argumentos})")
-
-            funcao_python = MAPA_TOOLS.get(nome_funcao)
-            if funcao_python:
-                try:
-                    resultado = funcao_python(**argumentos)
-                except Exception as e:
-                    resultado = f"Erro ao executar ferramenta {nome_funcao}: {e!s}"
+            # Tratamento seguro contra argumentos JSON malformados
+            try:
+                argumentos = json.loads(tool_call.function.arguments)
+            except (json.JSONDecodeError, TypeError) as erro_json:
+                argumentos = {}
+                resultado = f"Erro nos argumentos enviados pelo modelo: {erro_json!s}"
             else:
-                resultado = f"Erro: Ferramenta '{nome_funcao}' não implementada."
+                funcao_python = MAPA_TOOLS.get(nome_funcao)
+                if funcao_python:
+                    try:
+                        resultado = funcao_python(**argumentos)
+                    except Exception as erro_exec:
+                        resultado = f"Erro ao executar a ferramenta {nome_funcao}: {erro_exec!s}"
+                else:
+                    resultado = (
+                        f"Ferramenta '{nome_funcao}' não reconhecida pelo sistema."
+                    )
 
             mensagens.append(
                 {
@@ -153,4 +164,4 @@ def responder_mensagem(historico_mensagens: list, max_iteracoes: int = 4) -> str
                 }
             )
 
-    return "Desculpe, o processamento excedeu o limite de passos para esta consulta."
+    return "Desculpe, o processamento excedeu o limite de passos estabelecido para esta consulta."
