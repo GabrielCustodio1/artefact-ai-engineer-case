@@ -21,7 +21,7 @@ if chave_groq:
     client = OpenAI(
         base_url="https://api.groq.com/openai/v1", api_key=chave_groq
     )
-    MODELO = "llama-3.1-8b-instant"
+    MODELO = "llama-3.3-70b-versatile"
 else:
     print(
         "⚠️ [Provedor Ativo] Chave Groq não detectada. Tentando Ollama local..."
