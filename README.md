@@ -1,86 +1,86 @@
-# Empório da Música - AI Customer Support Agent
-### Technical Case: AI Engineer – Full-Stack para Aplicações com IA Generativa | Artefact
+# Empório da Música - Local-First AI Customer Support Agent
+### Technical Case: AI Engineer – Full-Stack para Aplicações com IA Generativa | Artefact Brazil
 
-An end-to-end AI-powered conversational agent designed for **Empório da Música**, a specialized musical instrument store founded in 2008 in Campo Grande/MS. The agent autonomously navigates structured inventory and order databases, extracts business rules from unstructured store policy documents, and interacts with customers through an intuitive web interface.
+An autonomous, enterprise-grade conversational AI assistant developed for **Empório da Música**, a specialized musical instrument store founded in 2008 in Campo Grande/MS. 
 
----
-
-## 🚀 Live Demo & Links
-
-- **Live Web Application:** [Streamlit Cloud App](https://artefact-ai-engineer-case.streamlit.app) *(substitute with your actual URL)*
-- **GitHub Repository:** [github.com/GabrielCustodio1/artefact-ai-engineer-case](https://github.com/GabrielCustodio1/artefact-ai-engineer-case)
+Built with a **Local-First (Self-Hosted) Architecture**, the system processes structured inventory and customer order records from SQLite, extracts corporate policies from unstructured PDF documentation, and interacts with customers via an intuitive Streamlit interface—operating with **zero external cloud API dependencies, zero token costs, and 100% data privacy**.
 
 ---
 
 ## 🏛️ System Architecture
 
-The solution follows the **KISS principle (Keep It Simple, Stupid)**, favoring lightweight, maintainable, and deterministic implementations over unnecessary infrastructure complexity:
+Following Artefact's core case guideline—**"solve it in the simplest way possible"**—the solution avoids artificial complexity (such as standing vector databases or bloated multi-agent frameworks) in favor of deterministic, observable, and maintainable software components:
 
-              ┌────────────────────────────────────────┐
-              │       Streamlit Web Interface          │
-              │               (app.py)                 │
-              └──────────────────┬─────────────────────┘
-                                 │ User Query
-                                 ▼
-              ┌────────────────────────────────────────┐
-              │     Agentic Controller (agent.py)      │
-              │  (ReAct Loop via OpenAI Compatible SDK)│
-              └─────────┬────────────────────┬─────────┘
-                        │                    │
-          Tool Calling  ▼                    ▼ Tool Calling
+                  ┌────────────────────────────────────────┐
+                  │        Streamlit Web Interface         │
+                  │               (app.py)                 │
+                  └──────────────────┬─────────────────────┘
+                                     │ User Query
+                                     ▼
+                  ┌────────────────────────────────────────┐
+                  │       Agentic Controller (agent.py)    │
+                  │  (Local ReAct Loop via OpenAI SDK)     │
+                  └─────────┬────────────────────┬─────────┘
+                            │                    │
+              Tool Calling  ▼                    ▼ Tool Calling
+   ┌────────────────────────────────┐   ┌────────────────────────────────┐
+   │   buscar_produtos(termo, ...)  │   │   consultar_politicas(duvida)  │
+   │   consultar_pedido(order_id)   │   │       (Unstructured RAG)       │
+   │    (Structured SQL Engine)     │   └───────────────┬────────────────┘
+   └───────────────┬────────────────┘                   │
+                   │                           pypdf Text Matcher
+                   ▼                       (Zero vector-db overhead)
+           SQLite Database                              │
+        (emporio_musica.db)                             ▼
+                                                politicas_da_loja.pdf
+                                                        │
+                   ┌────────────────────────────────────┘
+                   ▼
+      Local Ollama Inference Engine
+      (qwen2.5:7b-instruct-q4_K_M)
+      Listening on localhost:11434
 
-┌────────────────────────────────┐   ┌────────────────────────────────┐
-│     buscar_produtos(termo,     │   │   consultar_politicas(duvida)  │
-│          preco_maximo)         │   │       (Unstructured RAG)       │
-│   consultar_pedido(order_id)   │   └───────────────┬────────────────┘
-│    (Structured SQL Engine)     │                   │
-└───────────────┬────────────────┘                   ▼
-│                           pypdf Text Matcher
-▼                           (Zero vector-db overhead)
-SQLite Database                              │
-(emporio_musica.db)                             ▼
-politicas_da_loja.pdf
+---
 
-### 1. Structured Data Engine (`tools.py`)
-- **Database:** Local SQLite database (`emporio_musica.db`).
-- **Catalog Search (`buscar_produtos`):** Case-insensitive wildcard queries with optional budget constraints, strictly querying instruments.
-- **Order Retrieval (`consultar_pedido`):** Relational SQL joins between `orders`, `order_items`, and `products` ensuring accurate price, shipping, and delivery timelines.
+## 💡 Key Architectural Pillars
 
-### 2. Policy Manual Extraction (`consultar_politicas`)
-- **Lightweight RAG without Vector Overhead:** Given the 8-page scope of `politicas_da_loja.pdf`, a dedicated vector store (e.g., ChromaDB) introduces unnecessary runtime dependencies and memory pressure. 
-- The system leverages `pypdf` with a keyword relevance scoring mechanism to extract authoritative policy sections (returns, guarantees, shipping deadlines) deterministically.
+### 1. Local-First Inference & Data Sovereignty
+- **Model:** `qwen2.5:7b-instruct-q4_K_M` running locally via [Ollama](https://ollama.com/).
+- **Privacy:** Customer purchase history, tracking codes, and internal documents remain within the local host boundary.
+- **Cost & Availability:** Zero operational cost per token; immune to public cloud rate limits, network outages, and third-party credential management issues.
 
-### 3. Agentic Execution Loop (`agent.py`)
-- **Reactive Tool Calling:** Implements an iterative ReAct pattern capable of executing parallel and multi-step tool calls (e.g., searching for a product under R\$ 800 while simultaneously retrieving return policies).
-- **Hybrid Deployment Engine:**
-  - **Cloud:** Powered by Groq's high-throughput LPU running `llama-3.1-8b-instant` via the OpenAI Python SDK.
-  - **Local Fallback:** Automatically switches to a local Ollama instance running `qwen2.5:7b-instruct-q4_K_M` if no external API key is provided.
-- **Strict Anti-Hallucination Guardrails:** The system prompt explicitly forbids inventing catalog models, prices, or policies.
+### 2. Structured Relational Engine (`tools.py`)
+- Direct parameter-safe interaction with `emporio_musica.db` using Python's standard `sqlite3`.
+- **`buscar_produtos`:** Sanitizes conversational stop-words (e.g., *"cheapest"*, *"best"*), supports category and keyword filtering, enforces budget caps, and automatically sorts results in ascending price order (`ORDER BY price_brl ASC`).
+- **`consultar_pedido`:** Performs multi-table SQL joins between `orders`, `order_items`, and `products` to retrieve complete order tracking timelines, carrier codes, and itemized summaries.
+
+### 3. Lightweight Policy Extraction (`tools.py`)
+- **`consultar_politicas`:** For an 8-page document (~3,500 words), deploying vector stores (ChromaDB/FAISS) introduces unnecessary memory bloat and platform compilation issues. 
+- The engine uses `pypdf` with a keyword-frequency relevance scoring algorithm to extract authoritative policy sections (7-day right of withdrawal, warranty deadlines, shipping rules) deterministically.
+
+### 4. ReAct Execution Loop & Guardrails (`agent.py`)
+- Employs native Function Calling through the standard OpenAI client abstraction pointing to `http://localhost:11434/v1`.
+- Can dispatch parallel or sequential tool invocations (e.g., retrieving guitars under R\$ 800 while simultaneously looking up return shipping policies).
+- **Anti-Hallucination:** An amnesic system prompt strictly prohibits fabricating prices, models, or rules without active tool verification.
+- **Business Scope:** Requests for accessories (strings, picks, cables, straps, amplifiers) are politely rejected, respecting the store's exclusive focus on instruments.
 
 ---
 
 ## 📁 Repository Structure
 
 ```text
-├── app.py                 # Streamlit chat interface and session state manager
-├── agent.py               # Agent orchestrator, ReAct loop, and tool definitions
-├── tools.py               # Deterministic SQL and document parsing functions
-├── requirements.txt       # Production dependencies
-├── .gitignore             # Environment and cache ignore rules
-├── README.md              # Technical documentation
+artefact-ai-engineer-case/
+├── app.py                 # Streamlit web chat UI with state retention
+├── agent.py               # ReAct control loop, tool definitions & local Ollama client
+├── tools.py               # Parameterized SQL database queries & pypdf policy search
+├── requirements.txt       # Production dependencies (streamlit, openai, pypdf)
+├── .gitignore             # Virtual environments, bytecode, and cache exclusions
+├── README.md              # Technical documentation (in English)
 └── data/
-    ├── emporio_musica.db  # SQLite database (orders, order_items, products)
-    └── politicas_da_loja.pdf # Official store manual
-
-🛠️ Local Setup & Execution
-Prerequisites
-Python 3.10+
-
-(Optional for offline execution) Ollama with qwen2.5:7b-instruct-q4_K_M
-
-1. Clone & Environment Setup
-
-git clone [https://github.com/GabrielCustodio1/artefact-ai-engineer-case.git](https://github.com/GabrielCustodio1/artefact-ai-engineer-case.git)
+    ├── emporio_musica.db  # Relational database (orders, order_items, products)
+    └── politicas_da_loja.pdf # Official store policy manual
+🚀 Quickstart & Reproduction GuidePrerequisitesPython 3.10+Ollama installed and runningStep 1: Download & Run the Local ModelBashollama run qwen2.5:7b-instruct-q4_K_M
+(Once downloaded, Ollama will serve the OpenAI-compatible API on http://localhost:11434/v1).Step 2: Clone & Set Up the EnvironmentBashgit clone [https://github.com/GabrielCustodio1/artefact-ai-engineer-case.git](https://github.com/GabrielCustodio1/artefact-ai-engineer-case.git)
 cd artefact-ai-engineer-case
 
 python -m venv .venv
@@ -90,19 +90,5 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
-
-2. Configure Environment Variables
-To run in cloud mode via Groq (instant response):
-
-Bash
-# Windows (PowerShell):
-\$env:GROQ_API_KEY="your_groq_api_key_here"
-
-# Linux/macOS:
-export GROQ_API_KEY="your_groq_api_key_here"
-Note: If no key is set, the application will default to your local Ollama instance (http://localhost:11434/v1).
-
-3. Run the Application
-Bash
-streamlit run app.py
-Open your browser at http://localhost:8501.
+Step 3: Run the ApplicationBashstreamlit run app.py
+Open your browser at http://localhost:8501.🧪 Validation MatrixScenarioInput QueryExpected & Observed Agent BehaviorComposite Multi-Tool"Quais violões vocês têm por até R$ 800 e qual a política de devolução?"Calls both buscar_produtos and consultar_politicas. Returns Yamaha C40 / Tagima Memphis and explains the 7-day withdrawal clause with store-covered shipping.Transactional Order"Poderia verificar o status e os itens do pedido número 1?"Triggers consultar_pedido(order_id='1'), retrieving customer details, carrier tracking code, and itemized instruments.Scope Boundary Check"Vocês têm encordoamento de aço e palhetas Fender?"Politely declines without hallucinating stock, informing the customer that the store deals exclusively in musical instruments.Catalog Exploration"Quais os tipos de instrumentos no catálogo?"Executes general product retrieval and outlines available instrument categories (violões, guitarras, teclados, baterias, sopro).👨‍💻 Candidate & Submission InfoCandidate: Gabriel Custodio de AbreuRole: AI Engineer – Full-Stack para Aplicações com IA GenerativaCompany: Artefact BrazilSubmission Date: November 2026
