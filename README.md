@@ -108,14 +108,15 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 ````
-###Step 3: Run the Application
+### Step 3: Run the Application
 
 ````Bash
 streamlit run app.py
 ````
 Open your browser at http://localhost:8501.
 
-#👨‍💻 Candidate & Submission Info
+# 👨‍💻 Candidate & Submission Info
+
 
 Candidate: Gabriel Custodio de Abreu
 
