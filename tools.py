@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+
 from pypdf import PdfReader
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -12,69 +13,48 @@ if not PDF_PATH.exists():
 
 
 # Funcao de busca de informacoes dos produtos
-def buscar_produtos(termo: str = None, preco_maximo: float = None):
-    conn = sqlite3.connect("data/emporio_musica.db")
-    cursor = conn.cursor()
-
-    query = "SELECT id, name, category, price_brl, stock_quantity FROM products WHERE 1=1"
+def buscar_produtos(termo: str = None, preco_maximo: float = None) -> str:
+    # query base e uma lista vazia de parâmetros
+    query = """
+        SELECT p.name, p.price_brl, p.stock_quantity, c.category_name, p.description
+        FROM products p
+        JOIN categories c ON p.category_id = c.category_id
+        WHERE p.status = 'active' AND p.stock_quantity > 0
+    """
     params = []
 
-    # 1. Limpa termos comuns que não são nomes de instrumentos
+    # Se o usuário passou um preço máximo, adicionamos a condição:
+    if preco_maximo is not None:
+        query += " AND p.price_brl <= ?"
+        params.append(preco_maximo)
+
+    # Se o usuário passou um termo de busca, procuramos com 'LIKE' (busca por aproximação)
     if termo:
-        palavras_ignorar = {
-            "mais",
-            "barato",
-            "barata",
-            "baratos",
-            "baratas",
-            "caro",
-            "cara",
-            "menor",
-            "maior",
-            "preço",
-            "preco",
-            "qual",
-            "o",
-            "a",
-            "um",
-            "uma",
-            "de",
-            "do",
-            "da",
-            "todos",
-            "tudo",
-        }
-        palavras_reais = [
-            p
-            for p in termo.strip().lower().split()
-            if p not in palavras_ignorar
-        ]
-        termo_limpo = " ".join(palavras_reais)
+        query += (
+            " AND (p.name LIKE ? OR p.description LIKE ? OR c.category_name LIKE ?)"
+        )
+        termo_busca = f"%{termo}%"
+        params.extend([termo_busca, termo_busca, termo_busca])
 
-        if termo_limpo:
-            query += " AND (LOWER(name) LIKE ? OR LOWER(category) LIKE ?)"
-            termo_sql = f"%{termo_limpo}%"
-            params.extend([termo_sql, termo_sql])
+    # Limitamos o resultado para não sobrecarregar o prompt da LLM
+    query += " LIMIT 10"
 
-    # 2. Só aplica preco_maximo se for um valor real maior que zero
-    if preco_maximo is not None and preco_maximo > 0:
-        query += " AND price_brl <= ?"
-        params.append(float(preco_maximo))
+    # Formatacao da busca para facilitar a leitura da LLM
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        linhas = cursor.fetchall()
 
-    # 3. SEMPRE ordena do mais barato para o mais caro
-    query += " ORDER BY price_brl ASC"
+    if not linhas:
+        return "Nenhum produto encontrado com os critérios informados."
 
-    cursor.execute(query, params)
-    produtos = cursor.fetchall()
-    conn.close()
-
-    if not produtos:
-        return "Nenhum instrumento encontrado com esses critérios."
-
+    # Formata o resultado em linhas amigáveis
     resultado = []
-    for p in produtos:
+    for row in linhas:
         resultado.append(
-            f"ID: {p[0]} | Nome: {p[1]} | Categoria: {p[2]} | Preço: R$ {p[3]:.2f} | Estoque: {p[4]}"
+            f"- Produto: {row['name']} | Preço: R$ {row['price_brl']:.2f} | "
+            f"Categoria: {row['category_name']} | Estoque: {row['stock_quantity']} un."
         )
 
     return "\n".join(resultado)
